@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="parchment">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Travel Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    <script src="{{ url_for('static', filename='page-transitions.js') }}"></script>
+    <script src="{{ url_for('static', filename='App.js') }}" defer></script>
+    <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+</head>
+<body>
+
+<div id="loading-screen" class="loading-screen">
+    <div class="loading-3d-stage">
+        <div class="loading-speedlines" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="loading-plane-3d-wrap">
+    <model-viewer src="https://modelviewer.dev/shared-assets/models/Airplane.glb"
+                  alt="طائرة سفر ثلاثية الأبعاد"
+                  auto-rotate
+                  auto-rotate-delay="0"
+                  rotation-per-second="45deg"
+                  disable-zoom
+                  interaction-prompt="none"
+                  shadow-intensity="1"
+                  poster="https://modelviewer.dev/shared-assets/models/Airplane.webp">
+    </model-viewer>
+    <span class="loading-plane-trail" aria-hidden="true"></span>
+</div>
+        <p class="loading-3d-text" data-i18n="loading">Preparing your journey&hellip;</p>
+    </div>
+</div>
+
+{# ================= Friendly-label & decoding helpers ================= #}
+{% set FRIENDLY_LABELS = {
+    'city': 'City', 'country': 'Country', 'temperature': 'Temperature',
+    'feels_like': 'Feels Like', 'wind_speed': 'Wind Speed', 'weather_code': 'Condition',
+    'timezone': 'Timezone', 'amount': 'Amount', 'from_currency': 'From',
+    'to_currency': 'To', 'rate': 'Exchange Rate', 'converted_amount': 'Converted Amount',
+    'total_budget': 'Total Budget', 'days': 'Trip Length', 'daily_budget': 'Daily Budget',
+    'destination': 'Destination', 'work_days': 'Work Days', 'interests': 'Interests',
+    'plan': 'Day-by-Day Plan', 'day': 'Day', 'budget': 'Budget', 'type': 'Day Type',
+    'error': 'Error'
+} %}
+
+{% set WEATHER_CODES = {
+    0: 'Clear sky', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast',
+    45: 'Fog', 48: 'Icy fog',
+    51: 'Light drizzle', 53: 'Drizzle', 55: 'Dense drizzle',
+    56: 'Freezing drizzle', 57: 'Dense freezing drizzle',
+    61: 'Light rain', 63: 'Rain', 65: 'Heavy rain',
+    66: 'Freezing rain', 67: 'Heavy freezing rain',
+    71: 'Light snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains',
+    80: 'Light showers', 81: 'Showers', 82: 'Violent showers',
+    85: 'Snow showers', 86: 'Heavy snow showers',
+    95: 'Thunderstorm', 96: 'Thunderstorm w/ hail', 99: 'Severe thunderstorm'
+} %}
+
+{% set TOOL_META = {
+    'get_weather': {'icon': 'cloud', 'title': 'Weather Check'},
+    'convert_currency': {'icon': 'coin', 'title': 'Currency Exchange'},
+    'calculate_daily_budget': {'icon': 'coin', 'title': 'Daily Budget'},
+    'create_trip_plan': {'icon': 'map', 'title': 'Trip Itinerary Planner'},
+    'search_flights': {'icon': 'plane', 'title': 'Flight Search'},
+    'search_flights_range': {'icon': 'plane', 'title': 'Flight Availability Search'}
+} %}
+
+{% set UNITS = { 'temperature': '°C', 'feels_like': '°C', 'wind_speed': ' km/h' } %}
+
+{% macro label(key) -%}
+{{ FRIENDLY_LABELS.get(key, key.replace('_', ' ').title()) }}
+{%- endmacro %}
+
+{# ---- Elegant monochrome line icons (no color emoji) ---- #}
+{% macro icon(name, size=20) %}
+{%- if name == 'compass' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9.2"/><path d="M15.3 8.7l-2.1 4.5-4.5 2.1 2.1-4.5z"/></svg>
+{%- elif name == 'plane' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 14.5l7-2 3-6.7c.3-.6 1.2-.6 1.5 0l1 2.2 4-1.1a1 1 0 011.2 1.3l-1.5 3.7 3 1.6c.7.4.5 1.4-.3 1.5l-4.3.6-1.8 4.6c-.2.6-1 .6-1.3.1l-1.8-3.5-6.7 1.6z"/></svg>
+{%- elif name == 'ticket' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 9a2 2 0 000 6M21 9a2 2 0 000 6"/><rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg>
+{%- elif name == 'suitcase' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="8" width="18" height="12" rx="1.5"/><path d="M9 8V6a1.5 1.5 0 011.5-1.5h3A1.5 1.5 0 0115 6v2"/><path d="M3 13h18"/></svg>
+{%- elif name == 'cloud' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 17a4 4 0 01-.5-7.97A5 5 0 0116.5 8 3.5 3.5 0 0117 15H7z"/></svg>
+{%- elif name == 'coin' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M9.5 9.7c0-1 1-1.7 2.5-1.7s2.5.8 2.5 1.7c0 2.3-5 1.3-5 3.6 0 1 1 1.7 2.5 1.7s2.5-.7 2.5-1.7"/></svg>
+{%- elif name == 'map' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>
+{%- elif name == 'alert' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 3.5L21.5 20h-19z"/><path d="M12 9.5v4.2"/><circle cx="12" cy="16.7" r=".3" fill="currentColor"/></svg>
+{%- elif name == 'gauge' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 16a8 8 0 1116 0"/><path d="M12 16l3.5-4.2"/><circle cx="12" cy="16" r="1"/></svg>
+{%- elif name == 'satellite' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 10l4-4 5 5-4 4z"/><path d="M13 6l4-4M8 15l-4 4M11 12l7 7M17.5 5.5a5 5 0 010 7"/></svg>
+{%- elif name == 'printer' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6 8V4h12v4"/><rect x="4" y="8" width="16" height="7" rx="1"/><path d="M6 15h12v5H6z"/></svg>
+{%- elif name == 'download' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 4v11M8 12l4 4 4-4"/><path d="M4 19h16"/></svg>
+{%- elif name == 'file' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/></svg>
+{%- endif -%}
+{% endmacro %}
+
+{% macro render_value(value, keyname='') %}
+    {%- if value is mapping -%}
+        <table class="nested-table"><tbody>
+        {% for k, v in value.items() %}{% if k != 'success' %}
+            <tr><th>{{ label(k) }}</th><td>{{ render_value(v, k) }}</td></tr>
+        {% endif %}{% endfor %}
+        </tbody></table>
+    {%- elif (value is iterable) and (value is not string) -%}
+        <div class="chip-group">
+        {% for item in value %}
+            {% if item is mapping %}{{ render_value(item) }}{% else %}<span class="chip">{{ item }}</span>{% endif %}
+        {% endfor %}
+        </div>
+    {%- elif value is sameas true -%}
+        <span class="pill pill-good">Yes</span>
+    {%- elif value is sameas false -%}
+        <span class="pill pill-bad">No</span>
+    {%- elif keyname == 'weather_code' -%}
+        {{ WEATHER_CODES.get(value, 'Code ' ~ value) }}
+    {%- else -%}
+        {{ value }}{{ UNITS.get(keyname, '') }}
+    {%- endif -%}
+{% endmacro %}
+
+{% macro data_table(d) %}
+<table class="data-table"><tbody>
+{% for k, v in d.items() %}{% if k != 'success' %}
+    <tr><th>{{ label(k) }}</th><td>{{ render_value(v, k) }}</td></tr>
+{% endif %}{% endfor %}
+</tbody></table>
+{% endmacro %}
+
+<div class="hero-art" aria-hidden="true">
+    <svg viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg">
+        <g fill="none" stroke="currentColor" stroke-width="1.6" opacity="0.9">
+            <ellipse cx="450" cy="560" rx="380" ry="10" opacity="0.25"/>
+            <path d="M120 300 Q 450 40 780 300" stroke-dasharray="2 10" opacity="0.5"/>
+            <circle cx="120" cy="300" r="5" fill="currentColor" stroke="none" opacity="0.6"/>
+            <circle cx="780" cy="300" r="5" fill="currentColor" stroke="none" opacity="0.6"/>
+            <g transform="translate(300,150) scale(2.6)">
+                <path d="M0 40 L60 40 L110 20 C118 17 118 27 110 30 L60 46 L48 70 L60 70 L70 60 L78 60 L72 76 L30 76 L36 60 L44 60 L40 46 L0 46 Z"/>
+                <path d="M20 40 L10 20 L18 20 L34 40"/>
+                <circle cx="15" cy="46" r="2" fill="currentColor" stroke="none"/>
+            </g>
+            <circle cx="700" cy="120" r="46" opacity="0.55"/>
+            <path d="M700 74v92M654 120h92" opacity="0.55"/>
+            <path d="M726 96l-16 34-34 16 16-34z" opacity="0.55"/>
+            <g transform="translate(120,420)" opacity="0.6">
+                <rect x="0" y="10" width="70" height="46" rx="4"/>
+                <path d="M22 10V2a6 6 0 016-6h0a6 6 0 016 6v8" transform="translate(0,10)"/>
+                <path d="M0 32h70"/>
+            </g>
+        </g>
+    </svg>
+</div>
+
+<div class="container">
+
+    <header>
+        <a class="back-to-landing" href="{{ url_for('landing') }}" data-i18n="backLanding">&larr; Home</a>
+
+        <div class="brand">
+            <span class="brand-badge">{{ icon('plane', 30) }}</span>
+            <div>
+                <h1 data-i18n="brandTitle">Agentic Travel Assistant</h1>
+                <p class="tagline" data-i18n="brandTagline">
+                    Give the AI a travel goal. The agent decides which tools it needs,
+                    executes them, observes the results, and continues until it can answer.
+                </p>
+            </div>
+        </div>
+
+        <div class="topbar-controls">
+            <button type="button" id="theme-toggle" class="pill-toggle" aria-label="Toggle theme">
+                <span class="pill-toggle-icon">&#9789;</span>
+                <span data-i18n="themeBoard">Night board</span>
+            </button>
+            <button type="button" id="lang-toggle" class="pill-toggle" aria-label="Toggle language">
+                <span class="pill-toggle-icon">&#127760;</span>
+                <span id="lang-toggle-label">العربية</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="plane-trail" aria-hidden="true"></div>
+
+    <section class="card toolkit-card no-print">
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('coin') }}</span>
+            <h2 data-i18n="toolkitTitle">Quick Currency Converter</h2>
+        </div>
+        <div class="converter-row">
+            <input type="number" id="conv-amount" value="100" min="0" step="any">
+            <select id="conv-from">
+                <option value="JOD">JOD</option>
+                <option value="USD" selected>USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="TRY">TRY</option>
+                <option value="AED">AED</option>
+                <option value="SAR">SAR</option>
+                <option value="EGP">EGP</option>
+            </select>
+            <button type="button" id="conv-swap" aria-label="Swap currencies" data-i18n-title="convSwap">&#8646;</button>
+            <select id="conv-to">
+                <option value="JOD">JOD</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="TRY" selected>TRY</option>
+                <option value="AED">AED</option>
+                <option value="SAR">SAR</option>
+                <option value="EGP">EGP</option>
+            </select>
+            <button type="button" id="conv-run" data-i18n="convButton">Convert</button>
+        </div>
+        <div id="conv-result" class="converter-result" dir="auto"></div>
+    </section>
+
+    <section class="card toolkit-card no-print">
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('plane') }}</span>
+            <h2>Flight Availability (Next 7 Days)</h2>
+        </div>
+        <div class="converter-row">
+            <input type="text" id="flight-origin" placeholder="Origin (e.g. AMM)" maxlength="3" style="width:150px; text-transform:uppercase;">
+            <input type="text" id="flight-destination" placeholder="Destination (e.g. IST)" maxlength="3" style="width:150px; text-transform:uppercase;">
+            <button type="button" id="flight-check-btn">Check Availability</button>
+        </div>
+        <div id="flight-availability-result" class="flight-availability-result" dir="auto"></div>
+    </section>
+
+    <section class="card boarding-card">
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('plane', 22) }}</span>
+            <h2 data-i18n="goalTitle">Your Travel Goal</h2>
+        </div>
+
+        <div class="mode-tabs" role="tablist" aria-label="Plan mode">
+            <button type="button" id="mode-tab-new" class="mode-tab active" role="tab" data-i18n="modeTabNew">New Trip</button>
+            <button type="button" id="mode-tab-edit" class="mode-tab" role="tab" data-i18n="modeTabEdit"
+                    data-has-plan="{{ '1' if state and state.itinerary else '0' }}"
+                    {% if not (state and state.itinerary) %}disabled title="Run a plan first, then you can edit it here."{% endif %}>
+                Edit Current Trip
+            </button>
+        </div>
+        <p id="edit-mode-hint" class="edit-mode-hint">This updates your current trip instead of starting a new one.</p>
+        <div id="edit-chip-row" class="edit-chip-row">
+            <button type="button" class="edit-chip" data-i18n="editChip1" data-text="Change day 2 to include more museums.">+ Change a day</button>
+            <button type="button" class="edit-chip" data-i18n="editChip2" data-text="Increase my total budget.">+ Adjust budget</button>
+            <button type="button" class="edit-chip" data-i18n="editChip3" data-text="Remove the most expensive activity.">+ Remove activity</button>
+            <button type="button" class="edit-chip" data-i18n="editChip4" data-text="Move my trip dates.">+ Move dates</button>
+        </div>
+
+        <form method="POST" id="goal-form">
+            <div class="textarea-wrap">
+                <textarea
+                    name="goal"
+                    id="goal-textarea"
+                    data-i18n-placeholder="goalPlaceholder"
+                    placeholder="Example: I am traveling to Istanbul for 5 days with 500 JOD. Check the weather, convert my money to TRY, and calculate my daily budget."
+                    required
+                >{{ goal }}</textarea>
+                <button type="button" id="mic-btn" class="mic-btn" title="Speak your goal" aria-label="Voice input" hidden>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v4M8 22h8"/></svg>
+                </button>
+            </div>
+            <div class="form-meta">
+                <span id="word-count" class="word-count">0 <span data-i18n="words">words</span></span>
+            </div>
+
+            <button type="submit" id="run-btn">
+                <span class="btn-plane">{{ icon('plane', 16) }}</span>
+                <span data-i18n="runButton">Run Travel Agent</span>
+            </button>
+        </form>
+    </section>
+
+    {% if error %}
+    <section class="card error-card" dir="auto">
+        <span class="card-icon">{{ icon('alert') }}</span>
+        <div>{{ error }}</div>
+    </section>
+    {% endif %}
+
+    {% if state %}
+<section class="card readiness-card">
+    <div class="card-heading">
+        <span class="card-icon">{{ icon('gauge') }}</span>
+        <h2 data-i18n="readinessTitle">Trip Readiness</h2>
+    </div>
+    {% set total_fields = 10 %}
+    {% set missing_count = state.validation.missing | length if state.validation else total_fields %}
+    {% set filled = total_fields - missing_count %}
+    {% set pct = ((filled * 100) / total_fields) | round | int %}
+    <div class="readiness-bar-track">
+        <div class="readiness-bar-fill" id="readiness-bar-fill" style="width: 0%;" data-target-pct="{{ pct }}"></div>
+    </div>
+    <div class="readiness-meta">
+        <span><span id="readiness-pct-number">0</span>% <span data-i18n="readinessComplete">complete</span></span>
+        {% if state.validation and state.validation.missing %}
+        <span class="readiness-missing" dir="auto">
+            <span data-i18n="readinessMissing">Still needed:</span>
+            {{ state.validation.missing | join(', ') }}
+        </span>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+    {% if state %}
+    <section class="card state-card">
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('gauge') }}</span>
+            <h2 data-i18n="stateTitle">Agent State</h2>
+        </div>
+
+        <div class="state-grid">
+            <div class="state-item state-goal">
+                <span class="state-label" data-i18n="stateGoal">Goal</span>
+                <span class="state-value" dir="auto">{{ state.goal }}</span>
+            </div>
+            <div class="state-item">
+                <span class="state-label" data-i18n="stateStatus">Status</span>
+                <span class="status-pill status-{{ state.status }}">{{ state.status }}</span>
+            </div>
+            <div class="state-item">
+                <span class="state-label" data-i18n="stateIterations">Iterations</span>
+                <span class="state-number">{{ state.iteration }}</span>
+            </div>
+        </div>
+
+        <div class="tools-used">
+            <span class="state-label" data-i18n="stateToolsUsed">Tools Used</span>
+            <div class="chip-group">
+                {% if state.tools_used %}
+                    {% for tool in state.tools_used %}
+                        {% set meta = TOOL_META.get(tool, {'icon': 'file', 'title': tool.replace('_',' ').title()}) %}
+                        <span class="tool-badge">{{ icon(meta.icon, 15) }} {{ meta.title }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="chip">No tools required</span>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if steps %}
+    <section class="trace-section">
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('satellite') }}</span>
+            <h2 data-i18n="traceTitle">Agent Execution Trace</h2>
+        </div>
+
+        <div class="timeline">
+            {% for step in steps %}
+            {% set meta = TOOL_META.get(step.tool, {'icon': 'file', 'title': step.tool.replace('_',' ').title()}) %}
+            <div class="step-card">
+                <div class="step-marker">{{ step.step }}</div>
+                <div class="step-header">
+                    <span class="step-tool-icon">{{ icon(meta.icon, 18) }}</span>
+                    <h3>{{ meta.title }}</h3>
+                    {% if step.result and step.result.get is defined %}
+                        {% if step.result.get('success') %}
+                            <span class="pill pill-good step-status">Success</span>
+                        {% else %}
+                            <span class="pill pill-bad step-status">Failed</span>
+                        {% endif %}
+                    {% endif %}
+                </div>
+                <div class="step-body">
+                    <div class="step-section">
+                        <span class="section-label">Request</span>
+                        {{ data_table(step.arguments) }}
+                    </div>
+                    <div class="step-section">
+                        <span class="section-label">Result</span>
+                        {% if step.result and step.result.get('success') == false %}
+                            <p class="inline-error">{{ step.result.get('error', 'Something went wrong.') }}</p>
+                        {% else %}
+                            {{ data_table(step.result) }}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if answer %}
+    <section class="card final-answer suitcase">
+        <div class="suitcase-handle"></div>
+        <div class="suitcase-rivet rivet-tl"></div>
+        <div class="suitcase-rivet rivet-tr"></div>
+        <div class="suitcase-rivet rivet-bl"></div>
+        <div class="suitcase-rivet rivet-br"></div>
+        <div class="suitcase-strap">
+            <div class="suitcase-buckle"></div>
+        </div>
+
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('suitcase') }}</span>
+            <h2 data-i18n="planTitle">Your Travel Plan</h2>
+        </div>
+
+        <div class="answer-inner">
+            <div id="agent-answer-content" class="answer-content" dir="auto"></div>
+            <script id="agent-answer-data" type="application/json">{{ answer | tojson }}</script>
+            <noscript><p class="answer-para" dir="auto">{{ answer }}</p></noscript>
+        </div>
+
+        <div class="answer-actions no-print">
+            <button type="button" id="print-btn">{{ icon('printer', 16) }} <span data-i18n="print">Print</span></button>
+            <button type="button" id="copy-answer-btn">{{ icon('file', 16) }} <span data-i18n="copyPlan">Copy</span></button>
+            <button type="button" id="download-txt-btn">{{ icon('file', 16) }} <span data-i18n="text">Text</span></button>
+            <button type="button" id="download-pdf-btn">{{ icon('download', 16) }} PDF</button>
+        </div>
+        {% if not error %}<div id="confetti-trigger" data-fire="1" hidden></div>{% endif %}
+
+        {# ---------------- Always-available Save & Share box ----------------
+           Independent from the agent's prepare_itinerary_email/pending_action
+           flow: the user can email a snapshot of the plan at any time. #}
+        <div class="save-share-box no-print">
+            <div class="save-share-heading">
+                <span class="card-icon">{{ icon('ticket', 18) }}</span>
+                <h3>Save &amp; Share This Plan</h3>
+            </div>
+            <p class="save-share-note">Send a snapshot of this plan to your own inbox or a friend's email.</p>
+            <div class="save-share-row">
+                <input type="email" id="direct-recipient-email" placeholder="friend@example.com">
+                <button type="button" id="direct-send-btn">
+                    {{ icon('plane', 14) }} <span>Send</span>
+                </button>
+            </div>
+            <div id="direct-send-status" class="no-print"></div>
+        </div>
+
+        {% if pending_action %}
+        <div class="envelope-wrap no-print" id="pending-action-box">
+            <p class="pending-action-note" dir="auto">
+                Ready to send itinerary to:
+                <strong>{{ pending_action.recipient_email or "the address you enter below" }}</strong>.
+                Approve sending?
+            </p>
+            <div class="envelope" id="envelope">
+                <div class="envelope-open">
+                    <div class="envelope-body">
+                        <input type="email" id="recipient-email" placeholder="you@example.com"
+                               value="{{ pending_action.recipient_email or '' }}">
+                        <button type="button" id="send-email-btn">Approve</button>
+                        <button type="button" id="cancel-email-btn">Cancel</button>
+                    </div>
+                </div>
+                <div class="envelope-closed">
+                    <div class="wax-seal"><span>SENT</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="email-status" class="no-print"></div>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if places %}
+    <section class="card map-card no-print">
+        <div class="card-heading">
+            <span class="card-icon">{{ icon('map') }}</span>
+            <h2 data-i18n="mapTitle">Places on the Map</h2>
+        </div>
+        <div id="trip-map" class="trip-map"></div>
+        <script id="map-data" type="application/json">{{ places | tojson }}</script>
+    </section>
+    {% endif %}
+
+</div>
+
+<script>
+(function () {
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function inlineFormat(str) {
+        return escapeHtml(str).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    }
+
+    function splitRow(line) {
+        var cells = line.trim().split('|').map(function (c) { return c.trim(); });
+        if (cells.length && cells[0] === '') cells.shift();
+        if (cells.length && cells[cells.length - 1] === '') cells.pop();
+        return cells;
+    }
+
+    function isTableRow(line) {
+        var t = line.trim();
+        if (t.indexOf('|') === -1) return false;
+        return splitRow(t).length >= 2;
+    }
+
+    function isSeparatorRow(line) {
+        var t = line.trim();
+        if (!t) return false;
+        var stripped = t.replace(/[|:\s]/g, '');
+        return stripped.length > 0 && /^-+$/.test(stripped);
+    }
+
+    function buildTickets(headers, rows) {
+        var html = '<div class="ticket-grid">';
+        rows.forEach(function (cells) {
+            var stubLabel = headers[0] || '';
+            var stubValue = cells[0] || '';
+            html += '<div class="ticket">';
+            html += '<div class="ticket-stub">';
+            html += '<span class="ticket-stub-label">' + inlineFormat(stubLabel) + '</span>';
+            html += '<span class="ticket-stub-value">' + inlineFormat(stubValue) + '</span>';
+            html += '</div>';
+            html += '<div class="ticket-body">';
+            for (var k = 1; k < headers.length; k++) {
+                if (!headers[k]) continue;
+                html += '<div class="ticket-field">';
+                html += '<span class="ticket-field-label">' + inlineFormat(headers[k]) + '</span>';
+                html += '<span class="ticket-field-value">' + inlineFormat(cells[k] || '') + '</span>';
+                html += '</div>';
+            }
+            html += '</div></div>';
+        });
+        html += '</div>';
+        return html;
+    }
+
+    function buildPlainTable(headers, rows) {
+        var html = '<table class="plan-table"><thead><tr>';
+        headers.forEach(function (h) { html += '<th>' + inlineFormat(h) + '</th>'; });
+        html += '</tr></thead><tbody>';
+        rows.forEach(function (cells) {
+            html += '<tr>';
+            cells.forEach(function (c) { html += '<td>' + inlineFormat(c) + '</td>'; });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function cleanRawArtifacts(raw) {
+        var text = String(raw);
+        text = text.replace(/<br\s*\/?>/gi, '\n');
+        text = text.replace(/^[\s]*\{[^\n]{0,400}\}[\s]*$/gm, '');
+        return text;
+    }
+
+    var FLIGHT_HEADER_KEYWORDS = [
+        'airline', 'flight', 'departure', 'arrival', 'cabin',
+        'stops', 'duration', 'gate', 'seat', 'carrier'
+    ];
+
+    function looksLikeFlightTable(headers) {
+        var joined = headers.join(' ').toLowerCase();
+        return FLIGHT_HEADER_KEYWORDS.some(function (kw) {
+            return joined.indexOf(kw) !== -1;
+        });
+    }
+
+    function renderAnswer(raw) {
+        var lines = cleanRawArtifacts(raw).replace(/\r\n/g, '\n').split('\n');
+        var out = '';
+        var para = [];
+        var list = [];
+
+        function flushPara() {
+            if (para.length) {
+                var text = para.join(' ').trim();
+                if (text) out += '<p class="answer-para">' + inlineFormat(text) + '</p>';
+                para = [];
+            }
+        }
+
+        function flushList() {
+            if (list.length) {
+                out += '<ul class="answer-list">' + list.map(function (t) {
+                    return '<li>' + inlineFormat(t) + '</li>';
+                }).join('') + '</ul>';
+                list = [];
+            }
+        }
+
+        var i = 0;
+        while (i < lines.length) {
+            var line = lines[i];
+            var trimmed = line.trim();
+            var isRow = isTableRow(trimmed);
+
+            if (isRow) {
+                var headers = splitRow(line);
+                var j = i + 1;
+                var nextTrimmed = (lines[j] || '').trim();
+
+                if (isSeparatorRow(nextTrimmed)) { j++; }
+
+                var rows = [];
+                while (
+                    j < lines.length &&
+                    isTableRow(lines[j]) &&
+                    splitRow(lines[j]).length === headers.length
+                ) {
+                    rows.push(splitRow(lines[j]));
+                    j++;
+                }
+
+                if (rows.length > 0) {
+                    flushPara();
+                    flushList();
+                    out += looksLikeFlightTable(headers) ? buildTickets(headers, rows) : buildPlainTable(headers, rows);
+                    i = j;
+                    continue;
+                }
+            }
+
+            if (/^[-*]\s+/.test(trimmed)) {
+                flushPara();
+                list.push(trimmed.replace(/^[-*]\s+/, ''));
+                i++;
+                continue;
+            }
+
+            if (trimmed === '') {
+                flushList();
+                flushPara();
+                i++;
+                continue;
+            }
+
+            flushList();
+            para.push(trimmed);
+            i++;
+        }
+
+        flushList();
+        flushPara();
+        return out;
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var loadingScreen = document.getElementById('loading-screen');
+        if (loadingScreen) {
+            var minDelay = 2500; // let the 3D plane intro play out fully
+            var start = Date.now();
+            window.addEventListener('load', function () {
+                var elapsed = Date.now() - start;
+                var wait = Math.max(0, minDelay - elapsed);
+                setTimeout(function () {
+                    loadingScreen.classList.add('hidden');
+                    setTimeout(function () { loadingScreen.remove(); }, 500);
+                }, wait);
+            });
+        }
+
+        var dataEl = document.getElementById('agent-answer-data');
+        var target = document.getElementById('agent-answer-content');
+
+        if (dataEl && target) {
+            try {
+                var raw = JSON.parse(dataEl.textContent);
+                target.innerHTML = renderAnswer(raw);
+            } catch (e) {
+                target.textContent = dataEl.textContent;
+            }
+        }
+
+        var printBtn = document.getElementById('print-btn');
+        if (printBtn) {
+            printBtn.addEventListener('click', function () { window.print(); });
+        }
+
+        var downloadTxtBtn = document.getElementById('download-txt-btn');
+        if (downloadTxtBtn && dataEl) {
+            downloadTxtBtn.addEventListener('click', function () {
+                var raw = JSON.parse(dataEl.textContent);
+                var blob = new Blob([raw], { type: 'text/plain;charset=utf-8' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'travel-plan.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        function captureAnswerCanvas() {
+            var section = document.querySelector('.final-answer');
+            var hiddenEls = section.querySelectorAll('.no-print');
+            hiddenEls.forEach(function (el) { el.style.visibility = 'hidden'; });
+
+            return html2canvas(section, {
+                scale: 2,
+                backgroundColor: '#EFE3C8',
+                useCORS: true
+            }).then(function (canvas) {
+                hiddenEls.forEach(function (el) { el.style.visibility = ''; });
+                return canvas;
+            }).catch(function (err) {
+                hiddenEls.forEach(function (el) { el.style.visibility = ''; });
+                throw err;
+            });
+        }
+
+        var downloadPdfBtn = document.getElementById('download-pdf-btn');
+        if (downloadPdfBtn) {
+            downloadPdfBtn.addEventListener('click', function () {
+                downloadPdfBtn.disabled = true;
+                captureAnswerCanvas().then(function (canvas) {
+                    var imgData = canvas.toDataURL('image/png');
+                    var jsPDFCtor = window.jspdf.jsPDF;
+                    var pdf = new jsPDFCtor({
+                        orientation: canvas.width > canvas.height ? 'l' : 'p',
+                        unit: 'px',
+                        format: [canvas.width, canvas.height]
+                    });
+                    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+                    pdf.save('travel-plan.pdf');
+                }).catch(function () {
+                    alert('Could not generate the PDF. Please try again.');
+                }).finally(function () {
+                    downloadPdfBtn.disabled = false;
+                });
+            });
+        }
+
+        var sendEmailBtn = document.getElementById('send-email-btn');
+        var cancelEmailBtn = document.getElementById('cancel-email-btn');
+        var recipientInput = document.getElementById('recipient-email');
+        var emailStatus = document.getElementById('email-status');
+        var pendingActionBox = document.getElementById('pending-action-box');
+
+        if (sendEmailBtn) {
+            sendEmailBtn.addEventListener('click', function () {
+                var recipient = recipientInput.value.trim();
+
+                if (!recipient) {
+                    emailStatus.textContent = 'Please enter a valid email address.';
+                    emailStatus.className = 'no-print status-fail';
+                    return;
+                }
+
+                sendEmailBtn.disabled = true;
+                if (cancelEmailBtn) cancelEmailBtn.disabled = true;
+
+                emailStatus.textContent = 'Sending email...';
+                emailStatus.className = 'no-print';
+
+                captureAnswerCanvas().then(function (canvas) {
+                    return fetch('/approve-email', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            recipient_email: recipient,
+                            image_data: canvas.toDataURL('image/png')
+                        })
+                    });
+                })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        emailStatus.textContent = data.message || 'Email sent successfully!';
+                        emailStatus.className = 'no-print status-success';
+                        if (pendingActionBox) pendingActionBox.style.display = 'none';
+                    } else {
+                        emailStatus.textContent = data.message || 'Failed to send email.';
+                        emailStatus.className = 'no-print status-fail';
+                        sendEmailBtn.disabled = false;
+                        if (cancelEmailBtn) cancelEmailBtn.disabled = false;
+                    }
+                })
+                .catch(function () {
+                    emailStatus.textContent = 'An error occurred while sending the email.';
+                    emailStatus.className = 'no-print status-fail';
+                    sendEmailBtn.disabled = false;
+                    if (cancelEmailBtn) cancelEmailBtn.disabled = false;
+                });
+            });
+        }
+
+        if (cancelEmailBtn && pendingActionBox) {
+            cancelEmailBtn.addEventListener('click', function () {
+                cancelEmailBtn.disabled = true;
+                fetch('/cancel-email', { method: 'POST' })
+                    .catch(function () { /* hide regardless */ })
+                    .finally(function () {
+                        pendingActionBox.style.display = 'none';
+                    });
+            });
+        }
+
+        /* ---------------- Always-available Save & Share ---------------- */
+        var directSendBtn = document.getElementById('direct-send-btn');
+        var directRecipientInput = document.getElementById('direct-recipient-email');
+        var directSendStatus = document.getElementById('direct-send-status');
+
+        if (directSendBtn) {
+            directSendBtn.addEventListener('click', function () {
+                var recipient = directRecipientInput.value.trim();
+
+                if (!recipient) {
+                    directSendStatus.textContent = 'Please enter a valid email address.';
+                    directSendStatus.className = 'no-print status-fail';
+                    return;
+                }
+
+                directSendBtn.disabled = true;
+                directSendStatus.textContent = 'Sending...';
+                directSendStatus.className = 'no-print';
+
+                captureAnswerCanvas().then(function (canvas) {
+                    return fetch('/send-plan-direct', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            recipient_email: recipient,
+                            image_data: canvas.toDataURL('image/png')
+                        })
+                    });
+                })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    directSendBtn.disabled = false;
+                    if (data.success) {
+                        directSendStatus.textContent = data.message || 'Sent!';
+                        directSendStatus.className = 'no-print status-success';
+                    } else {
+                        directSendStatus.textContent = data.message || 'Failed to send.';
+                        directSendStatus.className = 'no-print status-fail';
+                    }
+                })
+                .catch(function () {
+                    directSendBtn.disabled = false;
+                    directSendStatus.textContent = 'An error occurred while sending.';
+                    directSendStatus.className = 'no-print status-fail';
+                });
+            });
+        }
+        /* ---------------- Standalone Flight Availability (7-day check) ---------------- */
+        var flightCheckBtn = document.getElementById('flight-check-btn');
+        var flightOriginInput = document.getElementById('flight-origin');
+        var flightDestInput = document.getElementById('flight-destination');
+        var flightResultEl = document.getElementById('flight-availability-result');
+
+        if (flightCheckBtn) {
+            flightCheckBtn.addEventListener('click', function () {
+                var origin = flightOriginInput.value.trim().toUpperCase();
+                var destination = flightDestInput.value.trim().toUpperCase();
+
+                if (!origin || !destination) {
+                    flightResultEl.innerHTML = '<p class="status-fail">Please enter both an origin and a destination airport code.</p>';
+                    return;
+                }
+
+                flightCheckBtn.disabled = true;
+                flightResultEl.innerHTML = '<p>Checking real availability for the next 7 days...</p>';
+
+                fetch('/api/flight-availability', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ origin: origin, destination: destination, days_ahead: 7 })
+                })
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    flightCheckBtn.disabled = false;
+
+                    if (!data.success) {
+                        flightResultEl.innerHTML = '<p class="status-fail">' + (data.error || 'No flights found for this route in the next 7 days.') + '</p>';
+                        return;
+                    }
+
+                    var dates = data.available_dates || {};
+                    var dateKeys = Object.keys(dates).sort();
+
+                    if (!dateKeys.length) {
+                        flightResultEl.innerHTML = '<p class="status-fail">No real availability found for ' + origin + ' &rarr; ' + destination + ' in the next 7 days.</p>';
+                        return;
+                    }
+
+                    var uiLang = localStorage.getItem('tavel_lang') || 'en';
+                    var headers = uiLang === 'ar'
+                        ? ['التاريخ', 'شركة الطيران', 'السعر', 'المغادرة', 'الوصول', 'التوقفات']
+                        : ['Date', 'Airline', 'Price', 'Departure', 'Arrival', 'Stops'];
+
+                    var html = '<table class="plan-table"><thead><tr>' +
+                        headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') +
+                        '</tr></thead><tbody>';
+
+                    dateKeys.forEach(function (dateKey) {
+                        var offers = dates[dateKey] || [];
+                        var cheapest = offers.reduce(function (best, offer) {
+                            var price = parseFloat(offer.price);
+                            if (!best || (!isNaN(price) && price < parseFloat(best.price))) return offer;
+                            return best;
+                        }, null);
+
+                        if (!cheapest) return;
+
+                        html += '<tr>' +
+                            '<td>' + dateKey + '</td>' +
+                            '<td>' + (cheapest.airline || '-') + '</td>' +
+                            '<td>' + (cheapest.price ? cheapest.price + ' ' + (cheapest.currency || '') : '-') + '</td>' +
+                            '<td>' + (cheapest.departure_time || '-') + '</td>' +
+                            '<td>' + (cheapest.arrival_time || '-') + '</td>' +
+                            '<td>' + (cheapest.stops != null ? cheapest.stops : '-') + '</td>' +
+                            '</tr>';
+                    });
+
+                    html += '</tbody></table>';
+                    flightResultEl.innerHTML = html;
+                })
+                .catch(function () {
+                    flightCheckBtn.disabled = false;
+                    flightResultEl.innerHTML = '<p class="status-fail">Network error. Please try again.</p>';
+                });
+            });
+        }
+    });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,247 @@
+{% macro icon(name, size=20) %}
+{%- if name == 'compass' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9.2"/><path d="M15.3 8.7l-2.1 4.5-4.5 2.1 2.1-4.5z"/></svg>
+{%- elif name == 'plane' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 14.5l7-2 3-6.7c.3-.6 1.2-.6 1.5 0l1 2.2 4-1.1a1 1 0 011.2 1.3l-1.5 3.7 3 1.6c.7.4.5 1.4-.3 1.5l-4.3.6-1.8 4.6c-.2.6-1 .6-1.3.1l-1.8-3.5-6.7 1.6z"/></svg>
+{%- elif name == 'ticket' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 9a2 2 0 000 6M21 9a2 2 0 000 6"/><rect x="3" y="6" width="18" height="12" rx="1.5"/><path d="M13 6v12" stroke-dasharray="2 2"/></svg>
+{%- elif name == 'coin' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M9.5 9.7c0-1 1-1.7 2.5-1.7s2.5.8 2.5 1.7c0 2.3-5 1.3-5 3.6 0 1 1 1.7 2.5 1.7s2.5-.7 2.5-1.7"/></svg>
+{%- elif name == 'map' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14M15 6v14"/></svg>
+{%- elif name == 'alert' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 3.5L21.5 20h-19z"/><path d="M12 9.5v4.2"/><circle cx="12" cy="16.7" r=".3" fill="currentColor"/></svg>
+{%- elif name == 'satellite' -%}
+<svg width="{{size}}" height="{{size}}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 10l4-4 5 5-4 4z"/><path d="M13 6l4-4M8 15l-4 4M11 12l7 7M17.5 5.5a5 5 0 010 7"/></svg>
+{%- endif -%}
+{% endmacro %}
+<!DOCTYPE html>
+<html lang="en" data-theme="board">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Travel Assistant — Plan a trip with a real AI agent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="{{ url_for('static', filename='page-transitions.js') }}"></script>
+    <script src="{{ url_for('static', filename='App.js') }}" defer></script>
+</head>
+<body class="landing-body">
+
+<div id="loading-screen" class="loading-screen">
+    <div class="loading-3d-stage">
+        <div class="loading-speedlines" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="loading-plane-3d-wrap">
+            <svg class="loading-plane-3d" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                <path d="M2.5 14.5l7-2 3-6.7c.3-.6 1.2-.6 1.5 0l1 2.2 4-1.1a1 1 0 011.2 1.3l-1.5 3.7 3 1.6c.7.4.5 1.4-.3 1.5l-4.3.6-1.8 4.6c-.2.6-1 .6-1.3.1l-1.8-3.5-6.7 1.6z"/>
+            </svg>
+            <span class="loading-plane-trail" aria-hidden="true"></span>
+        </div>
+        <p class="loading-3d-text" data-i18n="loading">Preparing your journey&hellip;</p>
+    </div>
+</div>
+
+<script>
+    (function () {
+        var loadingScreen = document.getElementById('loading-screen');
+        if (!loadingScreen) return;
+        var minDelay = 2500;
+        var start = Date.now();
+        window.addEventListener('load', function () {
+            var elapsed = Date.now() - start;
+            var wait = Math.max(0, minDelay - elapsed);
+            setTimeout(function () {
+                loadingScreen.classList.add('hidden');
+                setTimeout(function () { loadingScreen.remove(); }, 500);
+            }, wait);
+        });
+    })();
+</script>
+
+<div class="landing-wrap">
+
+    <header class="landing-header">
+        <div class="brand">
+            <span class="brand-badge">{{ icon('plane', 26) }}</span>
+            <span class="landing-brand-name">Agentic Travel</span>
+        </div>
+        <a class="landing-cta-small" href="{{ url_for('planner') }}">Open the planner</a>
+    </header>
+
+    <section class="landing-hero">
+        <p class="landing-eyebrow">An AI agent that actually books nothing &mdash; it plans, and lets you approve</p>
+        <h1 class="landing-hero-title">
+            Tell it where.
+            <span class="flap-word" id="flap-word" aria-hidden="true">DUBAI</span>
+            <span class="landing-visually-hidden">Dubai, Istanbul, Rome, Tokyo, Cairo</span>
+            <br>It builds the trip.
+        </h1>
+        <p class="landing-hero-sub">
+            Give it a budget, your work hours, and what you like. The agent searches
+            real cafés, museums and attractions, checks real walking times between
+            them, and only sends anything by email after you say yes.
+        </p>
+        <div class="landing-hero-actions">
+            <a class="landing-cta-primary" href="{{ url_for('planner') }}">Start planning</a>
+            <span class="landing-hero-note">No booking, no card. Just a plan.</span>
+        </div>
+    </section>
+
+    <section class="departure-strip" aria-hidden="true">
+        <div class="departure-strip-track">
+            <span>ISTANBUL &mdash; BOARDING</span>
+            <span>DUBAI &mdash; ON TIME</span>
+            <span>ROME &mdash; GATE 12</span>
+            <span>TOKYO &mdash; ON TIME</span>
+            <span>CAIRO &mdash; BOARDING</span>
+            <span>AMMAN &mdash; ON TIME</span>
+            <span>ISTANBUL &mdash; BOARDING</span>
+            <span>DUBAI &mdash; ON TIME</span>
+            <span>ROME &mdash; GATE 12</span>
+            <span>TOKYO &mdash; ON TIME</span>
+        </div>
+    </section>
+
+    <section class="landing-section">
+        <h2 class="landing-section-title">How it moves through the gates</h2>
+        <div class="gate-sequence">
+            <div class="gate-step">
+                <span class="gate-number">Gate 1</span>
+                <h3>Tell it your goal</h3>
+                <p>Destination, days, budget, work hours, and what you actually like &mdash; in one message.</p>
+            </div>
+            <div class="gate-step">
+                <span class="gate-number">Gate 2</span>
+                <h3>It calls real tools</h3>
+                <p>Live weather, currency rates, real cafés and museums, and walking times between them.</p>
+            </div>
+            <div class="gate-step">
+                <span class="gate-number">Gate 3</span>
+                <h3>You review the plan</h3>
+                <p>A day-by-day itinerary with real places, budgets, and a full trace of what the agent checked.</p>
+            </div>
+            <div class="gate-step">
+                <span class="gate-number">Gate 4</span>
+                <h3>You approve, it acts</h3>
+                <p>Ask to revise a day or email the plan &mdash; nothing is sent until you click Approve.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="landing-section">
+        <h2 class="landing-section-title">What's in the ticket</h2>
+        <div class="pass-grid">
+            <div class="pass-card">
+                <div class="pass-card-top">
+                    <span class="pass-card-icon">{{ icon('map', 22) }}</span>
+                    <span class="pass-card-code">PLACES</span>
+                </div>
+                <h3>Real places, not guesses</h3>
+                <p>Cafés, museums, restaurants and attractions come from live map data, matched to your interests.</p>
+            </div>
+            <div class="pass-card">
+                <div class="pass-card-top">
+                    <span class="pass-card-icon">{{ icon('coin', 22) }}</span>
+                    <span class="pass-card-code">BUDGET</span>
+                </div>
+                <h3>Currency and daily budget</h3>
+                <p>Live exchange rates and a per-day budget split, plus a quick converter you can use any time.</p>
+            </div>
+            <div class="pass-card">
+                <div class="pass-card-top">
+                    <span class="pass-card-icon">{{ icon('satellite', 22) }}</span>
+                    <span class="pass-card-code">ROUTES</span>
+                </div>
+                <h3>Walking time between stops</h3>
+                <p>Every plan checks real travel time so you don't end up with a day that's too spread out.</p>
+            </div>
+            <div class="pass-card">
+                <div class="pass-card-top">
+                    <span class="pass-card-icon">{{ icon('ticket', 22) }}</span>
+                    <span class="pass-card-code">MEMORY</span>
+                </div>
+                <h3>Remembers your trip</h3>
+                <p>Ask to change day 2 later and it edits just that day &mdash; it doesn't rebuild from scratch.</p>
+            </div>
+            <div class="pass-card">
+                <div class="pass-card-top">
+                    <span class="pass-card-icon">{{ icon('alert', 22) }}</span>
+                    <span class="pass-card-code">APPROVAL</span>
+                </div>
+                <h3>Human approval, always</h3>
+                <p>The agent can draft an email of your plan, but a human has to approve it before anything sends.</p>
+            </div>
+            <div class="pass-card">
+                <div class="pass-card-top">
+                    <span class="pass-card-icon">{{ icon('compass', 22) }}</span>
+                    <span class="pass-card-code">LANGUAGE</span>
+                </div>
+                <h3>Works in Arabic and English</h3>
+                <p>Switch the interface language any time, and speak your goal instead of typing it.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="landing-final-cta">
+        <h2>Where are you actually going?</h2>
+        <a class="landing-cta-primary" href="{{ url_for('planner') }}">Start planning</a>
+    </section>
+
+    <footer class="landing-footer">
+        <span>Agentic Travel Assistant &mdash; a practical-labs project.</span>
+    </footer>
+
+</div>
+
+<script>
+    (function () {
+        var words = ["DUBAI", "ISTANBUL", "ROME", "TOKYO", "CAIRO", "AMMAN"];
+        var el = document.getElementById("flap-word");
+        if (!el) return;
+
+        var CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        var index = 0;
+
+        function scrambleTo(target, done) {
+            var current = el.textContent.padEnd(target.length, " ").split("");
+            var maxLen = Math.max(current.length, target.length);
+            var frame = 0;
+            var totalFrames = 10;
+
+            var timer = setInterval(function () {
+                frame++;
+                var out = "";
+                for (var i = 0; i < maxLen; i++) {
+                    var targetChar = target[i] || "";
+                    if (frame >= totalFrames || Math.random() < frame / totalFrames) {
+                        out += targetChar;
+                    } else {
+                        out += CHARS[Math.floor(Math.random() * CHARS.length)];
+                    }
+                }
+                el.textContent = out.trimEnd();
+                if (frame >= totalFrames) {
+                    clearInterval(timer);
+                    if (done) done();
+                }
+            }, 45);
+        }
+
+        function cycle() {
+            index = (index + 1) % words.length;
+            scrambleTo(words[index], function () {
+                setTimeout(cycle, 1800);
+            });
+        }
+
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+            setTimeout(cycle, 1800);
+        }
+    })();
+</script>
+
+</body>
+</html>
